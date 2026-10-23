@@ -476,8 +476,9 @@ Examples:
     sync.run()
 
 
-if __name__ == "__main__":
-    main()
-
 def handler(request=None, response=None):
     return {"status": "ok", "message": "Classroom CLI app"}
+
+
+if __name__ == "__main__":
+    main()
