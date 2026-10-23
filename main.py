@@ -26,7 +26,7 @@ from rich.table import Table
 
 from config import (
     LOCAL_CSV_FILE, DATETIME_FORMAT, DATE_FORMAT,
-    SHOW_PROGRESS, validate_config
+    SHOW_PROGRESS, validate_config, get_spreadsheet_id
 )
 from auth import get_credentials, delete_token, print_token_info
 from classroom_api import ClassroomAPI
@@ -66,7 +66,7 @@ class ClassroomSheetsSync:
         # Step 3: Fetch courses
         courses = self._fetch_courses()
         if not courses:
-            console.print("[red]❌ No active courses found. Exiting.[/red]")
+            console.print("[red]ERROR: No active courses found. Exiting.[/red]")
             return
 
         # Step 4: Process each course
@@ -85,12 +85,12 @@ class ClassroomSheetsSync:
         if not self.csv_only:
             self._sync_to_sheets()
 
-        console.print("\n[green]✨ All done![/green]")
+        console.print("\n[green]All done![/green]")
 
     def _print_banner(self) -> None:
         """Print welcome banner."""
         banner = Panel.fit(
-            "[bold cyan]Google Classroom → Google Sheets Sync[/bold cyan]\n"
+            "[bold cyan]Google Classroom -> Google Sheets Sync[/bold cyan]\n"
             "Автоматический сбор заданий и важных объявлений",
             border_style="cyan"
         )
@@ -99,33 +99,31 @@ class ClassroomSheetsSync:
 
     def _authenticate(self) -> None:
         """Handle authentication."""
-        console.print("[bold]🔐 Authentication[/bold]")
+        console.print("[bold]Authentication[/bold]")
         try:
             self.credentials = get_credentials()
-            console.print("✅ Authentication successful\n")
+            console.print("Authentication successful\n")
         except Exception as e:
-            console.print(f"[red]❌ Authentication failed: {e}[/red]")
+            console.print(f"[red]Authentication failed: {e}[/red]")
             sys.exit(1)
 
     def _init_apis(self) -> None:
         """Initialize API clients."""
-        console.print("[bold]🔧 Initializing API clients[/bold]")
+        console.print("[bold]Initializing API clients[/bold]")
         self.classroom = ClassroomAPI(self.credentials)
         if not self.csv_only:
-            self.sheets = SheetsAPI(self.credentials)
-            if self.spreadsheet_id:
-                self.sheets.spreadsheet_id = self.spreadsheet_id
-        console.print("✅ API clients ready\n")
+            self.sheets = SheetsAPI(self.credentials, self.spreadsheet_id)
+        console.print("API clients ready\n")
 
     def _fetch_courses(self) -> list[dict]:
         """Fetch all active courses."""
-        console.print("[bold]📚 Fetching courses[/bold]")
+        console.print("[bold]Fetching courses[/bold]")
         courses = self.classroom.get_active_courses()
         return courses
 
     def _process_courses(self, courses: list[dict]) -> None:
         """Process each course to fetch coursework and announcements."""
-        console.print("[bold]🔍 Processing courses[/bold]")
+        console.print("[bold]Processing courses[/bold]")
 
         with Progress(
             SpinnerColumn(),
@@ -146,7 +144,7 @@ class ClassroomSheetsSync:
                 try:
                     self._process_course(course_id, course_name)
                 except Exception as e:
-                    console.print(f"[yellow]⚠️  Error processing {course_name}: {e}[/yellow]")
+                    console.print(f"[yellow]WARNING: Error processing {course_name}: {e}[/yellow]")
 
                 progress.advance(task)
 
@@ -289,7 +287,7 @@ class ClassroomSheetsSync:
             "title": snippet,
             "deadline": deadline_str,
             "status": "Требует внимания",
-            "grade": "—",
+            "grade": "-",
             "url": url,
             # For sorting
             "_deadline_dt": deadline_dt,
@@ -330,12 +328,12 @@ class ClassroomSheetsSync:
     def _sort_tasks(self) -> None:
         """Sort tasks by urgency."""
         self.tasks.sort(key=lambda t: t["_sort_key"])
-        console.print(f"📋 Sorted [bold]{len(self.tasks)}[/bold] tasks by urgency")
+        console.print(f"Sorted [bold]{len(self.tasks)}[/bold] tasks by urgency")
 
     def _print_summary(self) -> None:
         """Print task summary table."""
         if not self.tasks:
-            console.print("[yellow]⚠️  No tasks found[/yellow]")
+            console.print("[yellow]WARNING: No tasks found[/yellow]")
             return
 
         # Count by status
@@ -345,7 +343,7 @@ class ClassroomSheetsSync:
             status_counts[status] = status_counts.get(status, 0) + 1
 
         # Print status summary
-        console.print("\n[bold]📊 Task Summary:[/bold]")
+        console.print("\n[bold]Task Summary:[/bold]")
         for status, count in sorted(status_counts.items()):
             console.print(f"  {status}: [bold]{count}[/bold]")
 
@@ -380,7 +378,7 @@ class ClassroomSheetsSync:
 
     def _save_csv(self) -> None:
         """Save tasks to local CSV file."""
-        console.print(f"\n[bold]💾 Saving to CSV: {LOCAL_CSV_FILE}[/bold]")
+        console.print(f"\n[bold]Saving to CSV: {LOCAL_CSV_FILE}[/bold]")
 
         try:
             with open(LOCAL_CSV_FILE, "w", newline="", encoding="utf-8-sig") as f:
@@ -403,18 +401,19 @@ class ClassroomSheetsSync:
                         task["url"],
                     ])
 
-            console.print(f"✅ CSV saved: [bold]{len(self.tasks)}[/bold] rows")
+            console.print(f"CSV saved: [bold]{len(self.tasks)}[/bold] rows")
 
         except Exception as e:
-            console.print(f"[red]❌ Failed to save CSV: {e}[/red]")
+            console.print(f"[red]ERROR: Failed to save CSV: {e}[/red]")
 
     def _sync_to_sheets(self) -> None:
         """Sync tasks to Google Sheets."""
         try:
-            self.sheets.sync_tasks(self.tasks)
+            updated, added, archived = self.sheets.upsert_tasks(self.tasks)
+            console.print(f"[green]Sheets sync: updated={updated}, added={added}, archived={archived}[/green]")
         except Exception as e:
-            console.print(f"[red]❌ Failed to sync to Google Sheets: {e}[/red]")
-            console.print("[yellow]💡 Data is still saved in local CSV[/yellow]")
+            console.print(f"[red]ERROR: Failed to sync to Google Sheets: {e}[/red]")
+            console.print("[yellow]NOTE: Data is still saved in local CSV[/yellow]")
 
 
 def main():
@@ -455,18 +454,19 @@ Examples:
 
     args = parser.parse_args()
 
-    # Validate config
-    if not validate_config():
-        sys.exit(1)
-
-    # Handle special commands
+    # Handle special commands (don't need full config validation)
     if args.token_info:
         print_token_info()
         sys.exit(0)
 
     if args.reauth:
-        console.print("[yellow]🔄 Forcing re-authentication...[/yellow]")
+        console.print("[yellow]Forcing re-authentication...[/yellow]")
         delete_token()
+        sys.exit(0)
+
+    # Validate config (required for normal sync)
+    if not validate_config(args.sheet_id, args.csv_only):
+        sys.exit(1)
 
     # Run sync
     sync = ClassroomSheetsSync(

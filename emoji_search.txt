@@ -1,0 +1,7 @@
+Line 126: U+1F50D (🔍) in: console.print("[bold]🔍 Processing courses[/bold]")
+Line 290: U+2014 (—) in: "grade": "—",
+Line 331: U+1F4CB (📋) in: console.print(f"📋 Sorted [bold]{len(self.tasks)}[/bold] tasks by urgency")
+Line 346: U+1F4CA (📊) in: console.print("\n[bold]📊 Task Summary:[/bold]")
+Line 381: U+1F4BE (💾) in: console.print(f"\n[bold]💾 Saving to CSV: {LOCAL_CSV_FILE}[/bold]")
+Line 416: U+1F4A1 (💡) in: console.print("[yellow]💡 Data is still saved in local CSV[/yellow]")
+Line 463: U+1F504 (🔄) in: console.print("[yellow]🔄 Forcing re-authentication...[/yellow]")

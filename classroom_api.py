@@ -2,24 +2,15 @@
 Google Classroom API module.
 
 Handles fetching courses, coursework, announcements, topics, and student submissions.
+Serverless-compatible version (no rich console).
 """
 
 import re
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
-
-from config import (
-    ACTION_KEYWORDS, DATETIME_FORMAT, DATE_FORMAT,
-    MAX_ANNOUNCEMENT_SNIPPET, SUBMISSION_STATE_MAP,
-    SHOW_PROGRESS
-)
-
-console = Console()
 
 
 class ClassroomAPI:
@@ -48,37 +39,26 @@ class ClassroomAPI:
         courses = []
         page_token = None
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-            disable=not SHOW_PROGRESS
-        ) as progress:
-            task = progress.add_task("Fetching courses...", total=None)
+        while True:
+            try:
+                response = self.service.courses().list(
+                    pageSize=100,
+                    pageToken=page_token,
+                    courseStates=["ACTIVE"]
+                ).execute()
 
-            while True:
-                try:
-                    response = self.service.courses().list(
-                        pageSize=100,
-                        pageToken=page_token,
-                        courseStates=["ACTIVE"]
-                    ).execute()
+                batch = response.get("courses", [])
+                courses.extend(batch)
 
-                    batch = response.get("courses", [])
-                    courses.extend(batch)
-                    progress.update(task, description=f"Fetching courses... ({len(courses)} found)")
-
-                    page_token = response.get("nextPageToken")
-                    if not page_token:
-                        break
-
-                except HttpError as e:
-                    console.print(f"[red]❌ Error fetching courses: {e}[/red]")
+                page_token = response.get("nextPageToken")
+                if not page_token:
                     break
 
-        console.print(f"✅ Found [bold]{len(courses)}[/bold] active courses")
+            except HttpError as e:
+                print(f"Error fetching courses: {e}")
+                break
+
+        print(f"Found {len(courses)} active courses")
         return courses
 
     # =========================================================================
@@ -115,7 +95,7 @@ class ClassroomAPI:
                     break
 
             except HttpError as e:
-                console.print(f"[yellow]⚠️  Could not fetch topics for course {course_id}: {e}[/yellow]")
+                print(f"Warning: Could not fetch topics for course {course_id}: {e}")
                 break
 
         self._topics_cache[course_id] = topics
@@ -160,7 +140,7 @@ class ClassroomAPI:
                     break
 
             except HttpError as e:
-                console.print(f"[yellow]⚠️  Could not fetch coursework for course {course_id}: {e}[/yellow]")
+                print(f"Warning: Could not fetch coursework for course {course_id}: {e}")
                 break
 
         return coursework
@@ -189,7 +169,7 @@ class ClassroomAPI:
             return submissions[0] if submissions else None
 
         except HttpError as e:
-            console.print(f"[yellow]⚠️  Could not fetch submission for {coursework_id}: {e}[/yellow]")
+            print(f"Warning: Could not fetch submission for {coursework_id}: {e}")
             return None
 
     # =========================================================================
@@ -224,7 +204,7 @@ class ClassroomAPI:
                     break
 
             except HttpError as e:
-                console.print(f"[yellow]⚠️  Could not fetch announcements for course {course_id}: {e}[/yellow]")
+                print(f"Warning: Could not fetch announcements for course {course_id}: {e}")
                 break
 
         return announcements
@@ -271,13 +251,13 @@ class ClassroomAPI:
         """Format datetime for display."""
         if not dt:
             return "Нет срока"
-        return dt.strftime(DATETIME_FORMAT)
+        return dt.strftime("%Y-%m-%d %H:%M")
 
     def format_date(self, dt: Optional[datetime]) -> str:
         """Format date for display."""
         if not dt:
             return "Нет срока"
-        return dt.strftime(DATE_FORMAT)
+        return dt.strftime("%Y-%m-%d")
 
     def is_overdue(self, dt: Optional[datetime]) -> bool:
         """Check if deadline is overdue."""
@@ -285,7 +265,7 @@ class ClassroomAPI:
             return False
         return dt < datetime.now(timezone.utc)
 
-    def is_due_soon(self, dt: Optional[datetime], hours: int = 24) -> bool:
+    def is_due_soon(self, dt: Optional[datetime], hours: int = 48) -> bool:
         """Check if deadline is within specified hours."""
         if not dt:
             return False
@@ -303,6 +283,8 @@ class ClassroomAPI:
         Returns:
             Russian status string
         """
+        from config import SUBMISSION_STATE_MAP
+
         # If no submission exists
         if not submission:
             due_date = coursework.get("dueDate")
@@ -397,6 +379,7 @@ class ClassroomAPI:
                     break
 
         # Truncate if too long
+        from config import MAX_ANNOUNCEMENT_SNIPPET
         if len(first_line) > MAX_ANNOUNCEMENT_SNIPPET:
             first_line = first_line[:MAX_ANNOUNCEMENT_SNIPPET - 3] + "..."
 
@@ -412,6 +395,7 @@ class ClassroomAPI:
         Returns:
             True if announcement likely requires student action
         """
+        from config import ACTION_KEYWORDS
         if not text:
             return False
 
